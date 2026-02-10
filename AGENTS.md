@@ -8,7 +8,7 @@ and spin a roulette. Statically exported and deployed to GitHub Pages.
 
 ## Tech Stack
 
-- **Frontend:** Next.js 14 (App Router), React 18, TypeScript
+- **Frontend:** Next.js 16 (App Router), React 19, TypeScript
 - **Styling:** styled-jsx (inline `<style jsx>`) + Tailwind CSS (base/reset only)
 - **Data:** Static JSON files (`public/attackers.json`, `public/defenders.json`)
 - **Backend utility:** Python 3.11 Selenium scraper (`backend/init_json.py`)

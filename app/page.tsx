@@ -19,7 +19,7 @@ interface OperatorsResponse {
 interface HistoryEntry {
   id: number;
   side: 'a' | 'd';
-  operators: { name: string; icon: string }[];
+  operators: { name: string; icon: string; teammate?: string }[];
 }
 
 const emptyResponse: OperatorsResponse = { operator_names: [], operator_icons: [] };
@@ -79,7 +79,6 @@ export default function Roulette() {
   const [count, setCount] = useState(1);
   const [operators, setOperators] = useState<OperatorsResponse>(emptyResponse);
   const [bannedOperators, setBannedOperators] = useState<{ a: string[], d: string[] }>({ a: [], d: [] });
-  // store random results per side so they persist when switching
   const [randomOperators, setRandomOperators] = useState<{ a: OperatorsResponse, d: OperatorsResponse }>({
     a: emptyResponse,
     d: emptyResponse,
@@ -88,14 +87,23 @@ export default function Roulette() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [nextHistoryId, setNextHistoryId] = useState(1);
-  // incremented on each spin to re-trigger the pop-in animation
   const [spinKey, setSpinKey] = useState(0);
+  // fixed 5-slot array -- never shrinks, names persist when count decreases
+  const [teammates, setTeammates] = useState<string[]>(['', '', '', '', '']);
 
   // fetch operators when side changes
   useEffect(() => {
     const response = getAllOperatorsBySide(side);
     setOperators(response);
   }, [side]);
+
+  const handleTeammateChange = (index: number, value: string) => {
+    setTeammates(prev => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
 
   // compute available count (total minus bans for current side)
   const availableCount = operators.operator_names.length - bannedOperators[side].length;
@@ -113,6 +121,9 @@ export default function Roulette() {
   // current side's random result
   const currentRandom = randomOperators[side];
 
+  // only show the first `count` teammates
+  const visibleTeammates = teammates.slice(0, count);
+
   const handleOperatorClick = (operator: string) => {
     if (bannedOperators[side].includes(operator)) {
       setBannedOperators({
@@ -120,7 +131,6 @@ export default function Roulette() {
         [side]: bannedOperators[side].filter(op => op !== operator)
       });
     } else {
-      // prevent banning everyone
       if (availableCount <= 1) return;
       setBannedOperators({
         ...bannedOperators,
@@ -146,10 +156,11 @@ export default function Roulette() {
     setRandomOperators(prev => ({ ...prev, [side]: response }));
     setSpinKey(prev => prev + 1);
 
-    // record in history
+    // record in history with teammate names
     const ops = response.operator_names.map((name, i) => ({
       name,
-      icon: response.operator_icons[i]
+      icon: response.operator_icons[i],
+      teammate: visibleTeammates[i]?.trim() || undefined,
     }));
     setHistory(prev => [{ id: nextHistoryId, side, operators: ops }, ...prev]);
     setNextHistoryId(prev => prev + 1);
@@ -164,6 +175,9 @@ export default function Roulette() {
   const filteredOperators = allMappedOperators.filter(({ name }) =>
     name.toLowerCase().includes(search.toLowerCase())
   );
+
+  const hasResults = currentRandom.operator_names.length > 0;
+  const showTeammateInputs = count > 1;
 
   return (
     <main className="min-h-screen w-full bg-[#121212] text-white selection:bg-blue-500/30 overflow-x-hidden">
@@ -242,14 +256,30 @@ export default function Roulette() {
 
         {/* random results area -- always visible to prevent layout shift */}
         <div className="w-full flex flex-col items-center mb-4">
-          {currentRandom.operator_names.length > 0 ? (
-            <div key={spinKey} className="flex flex-wrap gap-4 justify-center p-4 bg-white/5 rounded-2xl border border-white/10 animate-fade-in">
+          {hasResults ? (
+            <div key={spinKey} className="flex flex-wrap gap-6 justify-center p-4 bg-white/5 rounded-2xl border border-white/10 animate-fade-in">
               {currentRandom.operator_names.map((name, idx) => (
                 <div
                   key={`${name}-${idx}`}
-                  className="animate-pop-in"
+                  className="flex flex-col items-center gap-1 animate-pop-in"
                   style={{ animationDelay: `${idx * 100}ms` }}
                 >
+                  {/* teammate input aligned above this card */}
+                  {showTeammateInputs && (
+                    <input
+                      type="text"
+                      value={teammates[idx]}
+                      onChange={(e) => handleTeammateChange(idx, e.target.value)}
+                      placeholder={`Player ${idx + 1}`}
+                      className="
+                        w-28 px-2 py-1 text-sm text-center
+                        bg-white/5 border border-white/10 rounded-lg
+                        text-white placeholder-gray-600
+                        focus:outline-none focus:border-white/20 focus:bg-white/10
+                        transition-all duration-200
+                      "
+                    />
+                  )}
                   <OperatorCard
                     name={name}
                     icon={currentRandom.operator_icons[idx]}
@@ -261,7 +291,28 @@ export default function Roulette() {
               ))}
             </div>
           ) : (
-            <div className="flex items-center justify-center w-full p-4 rounded-2xl border-2 border-dashed border-white/10 bg-white/[0.02]" style={{ minHeight: '10rem' }}>
+            <div className="flex flex-col items-center justify-center w-full gap-4" style={{ minHeight: '10rem' }}>
+              {/* show teammate inputs even before first spin */}
+              {showTeammateInputs && (
+                <div className="flex flex-wrap gap-3 justify-center animate-fade-in">
+                  {visibleTeammates.map((name, i) => (
+                    <input
+                      key={i}
+                      type="text"
+                      value={name}
+                      onChange={(e) => handleTeammateChange(i, e.target.value)}
+                      placeholder={`Player ${i + 1}`}
+                      className="
+                        w-28 px-2 py-1 text-sm text-center
+                        bg-white/5 border border-white/10 rounded-lg
+                        text-white placeholder-gray-600
+                        focus:outline-none focus:border-white/20 focus:bg-white/10
+                        transition-all duration-200
+                      "
+                    />
+                  ))}
+                </div>
+              )}
               <p className="text-gray-500 text-sm italic text-center leading-relaxed">
                 Hit <span className="text-gray-400 font-medium not-italic">SPIN</span> to randomly draw your squad
               </p>

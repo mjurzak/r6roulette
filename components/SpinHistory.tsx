@@ -3,7 +3,7 @@ import React from 'react';
 interface HistoryEntry {
   id: number;
   side: 'a' | 'd';
-  operators: { name: string; icon: string }[];
+  operators: { name: string; icon: string; teammate?: string }[];
 }
 
 interface SpinHistoryProps {
@@ -39,7 +39,7 @@ export default function SpinHistory({ history, onClear }: SpinHistoryProps) {
           {/* side badge */}
           <span
             className={`
-              text-[10px] font-bold uppercase px-1.5 py-0.5 rounded
+              text-[10px] font-bold uppercase px-1.5 py-0.5 rounded shrink-0
               ${entry.side === 'a'
                 ? 'bg-blue-600/30 text-blue-300'
                 : 'bg-orange-600/30 text-orange-300'}
@@ -47,16 +47,19 @@ export default function SpinHistory({ history, onClear }: SpinHistoryProps) {
           >
             {entry.side === 'a' ? 'ATK' : 'DEF'}
           </span>
-          {/* operator icons */}
-          <div className="flex items-center gap-1 flex-1 min-w-0">
+          {/* operator icons with optional teammate names */}
+          <div className="flex items-center gap-1.5 flex-1 min-w-0 flex-wrap">
             {entry.operators.map((op, i) => (
-              <img
-                key={`${op.name}-${i}`}
-                src={op.icon}
-                alt={op.name}
-                title={op.name}
-                className="w-5 h-5 object-contain shrink-0"
-              />
+              <div key={`${op.name}-${i}`} className="flex items-center gap-0.5" title={op.teammate ? `${op.teammate}: ${op.name}` : op.name}>
+                <img
+                  src={op.icon}
+                  alt={op.name}
+                  className="w-5 h-5 object-contain shrink-0"
+                />
+                {op.teammate && (
+                  <span className="text-[9px] text-gray-400 truncate max-w-[50px]">{op.teammate}</span>
+                )}
+              </div>
             ))}
           </div>
         </div>
