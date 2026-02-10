@@ -4,62 +4,41 @@ import { useState, useEffect } from 'react';
 import './globals.css';
 import defenders from '../public/defenders.json';
 import attackers from '../public/attackers.json';
+import OperatorCard from '../components/OperatorCard';
+import ControlPanel from '../components/ControlPanel';
+import OperatorGrid from '../components/OperatorGrid';
+import SearchBar from '../components/SearchBar';
+import BannedList from '../components/BannedList';
+import SpinHistory from '../components/SpinHistory';
 
 interface OperatorsResponse {
   operator_names: string[];
   operator_icons: string[];
 }
 
-const OperatorsComponent = ({ bannedOperators }: { bannedOperators: { a: string[], d: string[] } }) => {
-  const [bannedOperatorsInfo, setBannedOperatorsInfo] = useState<string[]>([]);
+interface HistoryEntry {
+  id: number;
+  side: 'a' | 'd';
+  operators: { name: string; icon: string }[];
+}
 
-  useEffect(() => {
-    // Combine both arrays into one and set the state
-    const combinedBannedOperators = [...bannedOperators.a, ...bannedOperators.d];
-    setBannedOperatorsInfo(combinedBannedOperators);
-  }, [bannedOperators]);
+const emptyResponse: OperatorsResponse = { operator_names: [], operator_icons: [] };
 
-  return (
-    <div className="banned-info">
-      Banned operators: {bannedOperatorsInfo.length > 0 ? bannedOperatorsInfo.join(', ') : 'None'}
-      <style jsx>{`
-        .banned-info {
-          color: #ff8c73;
-          font-size: 1.2rem;
-          margin-bottom: 20px;
-        }
-      `}</style>
-    </div>
-  );
-};
-
-const getAllOperatorsBySide = (side: 'a' | 'd', bans: string[]): OperatorsResponse => {
+// helper to get all operators for a side
+const getAllOperatorsBySide = (side: 'a' | 'd'): OperatorsResponse => {
   const operator_names: string[] = [];
   const operator_icons: string[] = [];
+  const source = side === 'a' ? attackers.attackers : defenders.defenders;
 
-  if (side === 'a') {
-    attackers.attackers.forEach((operator: any) => {
-      const name = operator.name;
-      const icon = operator.icon;
-      if (!bans.includes(name)) {
-        operator_names.push(name);
-        operator_icons.push(icon);
-      }
-    });
-  } else if (side === 'd') {
-    defenders.defenders.forEach((operator: any) => {
-      const name = operator.name;
-      const icon = operator.icon;
-      if (!bans.includes(name)) {
-        operator_names.push(name);
-        operator_icons.push(icon);
-      }
-    });
-  }
+  source.forEach((operator: any) => {
+    operator_names.push(operator.name);
+    operator_icons.push(operator.icon);
+  });
 
   return { operator_names, operator_icons };
 };
 
+// helper to get random operators respecting bans
 const getRandomOperatorsBySide = (
   side: 'a' | 'd',
   numOperators: number,
@@ -84,9 +63,10 @@ const getRandomOperatorsBySide = (
     });
   }
 
-  while (operator_names.length < numOperators && availableOperators.length > 0) {
-    const randomIndex = Math.floor(Math.random() * availableOperators.length);
-    const selectedOperator = availableOperators.splice(randomIndex, 1)[0];
+  const tempAvailable = [...availableOperators];
+  while (operator_names.length < numOperators && tempAvailable.length > 0) {
+    const randomIndex = Math.floor(Math.random() * tempAvailable.length);
+    const selectedOperator = tempAvailable.splice(randomIndex, 1)[0];
     operator_names.push(selectedOperator.name);
     operator_icons.push(selectedOperator.icon);
   }
@@ -95,28 +75,43 @@ const getRandomOperatorsBySide = (
 };
 
 export default function Roulette() {
-  const [side, setSide] = useState<'a' | 'd'>('a'); // 'a' for attackers, 'd' for defenders
+  const [side, setSide] = useState<'a' | 'd'>('a');
   const [count, setCount] = useState(1);
-  const [operators, setOperators] = useState<OperatorsResponse>({ operator_names: [], operator_icons: [] });
+  const [operators, setOperators] = useState<OperatorsResponse>(emptyResponse);
   const [bannedOperators, setBannedOperators] = useState<{ a: string[], d: string[] }>({ a: [], d: [] });
-  const [randomOperators, setRandomOperators] = useState<OperatorsResponse>({ operator_names: [], operator_icons: [] });
+  // store random results per side so they persist when switching
+  const [randomOperators, setRandomOperators] = useState<{ a: OperatorsResponse, d: OperatorsResponse }>({
+    a: emptyResponse,
+    d: emptyResponse,
+  });
   const [search, setSearch] = useState('');
-  const currentColor = side === 'a' ? '#0595fc' : '#fc8105';
-  
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [nextHistoryId, setNextHistoryId] = useState(1);
+  // incremented on each spin to re-trigger the pop-in animation
+  const [spinKey, setSpinKey] = useState(0);
+
+  // fetch operators when side changes
   useEffect(() => {
-    fetchOperators();
+    const response = getAllOperatorsBySide(side);
+    setOperators(response);
   }, [side]);
 
-  const fetchOperators = async () => {
-    try {
-      // const response = await axios.get<OperatorsResponse>(`http://127.0.0.1:8000/operators?side=${side}`);
-      const response = getAllOperatorsBySide(side, bannedOperators[side]);
-      setOperators(response);
-      // setOperators(response.data);
-    } catch (error) {
-      console.error('Error fetching operators:', error);
+  // compute available count (total minus bans for current side)
+  const availableCount = operators.operator_names.length - bannedOperators[side].length;
+
+  // clamp slider max to available operators
+  const maxCount = Math.max(1, Math.min(5, availableCount));
+
+  // auto-clamp count when bans reduce available pool below current count
+  useEffect(() => {
+    if (count > maxCount) {
+      setCount(maxCount);
     }
-  };
+  }, [maxCount, count]);
+
+  // current side's random result
+  const currentRandom = randomOperators[side];
 
   const handleOperatorClick = (operator: string) => {
     if (bannedOperators[side].includes(operator)) {
@@ -124,265 +119,171 @@ export default function Roulette() {
         ...bannedOperators,
         [side]: bannedOperators[side].filter(op => op !== operator)
       });
-    } else if (bannedOperators[side].length < 2) {
+    } else {
+      // prevent banning everyone
+      if (availableCount <= 1) return;
       setBannedOperators({
         ...bannedOperators,
         [side]: [...bannedOperators[side], operator]
       });
     }
   };
-  
-  const handleSideChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newSide = e.target.checked ? 'd' : 'a';
-    setSide(newSide);
-    setBannedOperators({ a: [], d: [] });
+
+  const handleClearAllBans = () => {
+    setBannedOperators({
+      ...bannedOperators,
+      [side]: []
+    });
   };
 
-  const fetchRandomOperators = async () => {
-    const response = getRandomOperatorsBySide(side, count, bannedOperators.a, bannedOperators.d);
-    console.log(response);
-    setRandomOperators(response);
+  const handleSideChange = (newSide: 'a' | 'd') => {
+    setSide(newSide);
   };
-  
-  const filteredOperators = operators.operator_names
-    .map((name, index) => ({ name, icon: operators.operator_icons[index] }))
-    .filter(({ name }) => name.toLowerCase().includes(search.toLowerCase()));
+
+  const fetchRandomOperators = () => {
+    if (availableCount <= 0) return;
+    const response = getRandomOperatorsBySide(side, count, bannedOperators.a, bannedOperators.d);
+    setRandomOperators(prev => ({ ...prev, [side]: response }));
+    setSpinKey(prev => prev + 1);
+
+    // record in history
+    const ops = response.operator_names.map((name, i) => ({
+      name,
+      icon: response.operator_icons[i]
+    }));
+    setHistory(prev => [{ id: nextHistoryId, side, operators: ops }, ...prev]);
+    setNextHistoryId(prev => prev + 1);
+  };
+
+  // prepare data for components
+  const allMappedOperators = operators.operator_names.map((name, index) => ({
+    name,
+    icon: operators.operator_icons[index]
+  }));
+
+  const filteredOperators = allMappedOperators.filter(({ name }) =>
+    name.toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div className="container">
-      <h1>R6Roulette</h1>
-      <div className="controls">
-        <label>
-          Count:{" "}
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={count}
-            onChange={(e) => setCount(parseInt(e.target.value))}
-          />
-          &nbsp;{count}
-        </label>
-        <div className="switchContainer">
-          <div className="left-side">Attackers</div>
-          <label className="switch" htmlFor="checkbox">
-            <input type="checkbox" id="checkbox" onChange={handleSideChange}/>
-            <div className="slider round"></div>
-          </label>
-          <div className="right-side">Defenders</div>
-        </div>
-        <button className="roulette-button" 
-        onClick={fetchRandomOperators} 
-        style={{backgroundColor: currentColor}}>
-          Spin Roulette
-        </button>
-      </div>
-      <div className="random-operators">
-        {randomOperators.operator_names.map((operator, index) => (
-          <div key={operator} className="operator random-operator" style={{ outline: `2px solid ${currentColor}` }}>
-            <img src={randomOperators.operator_icons[index]} alt={operator} />
-            {operator}
-          </div>
-        ))}
-      </div>
-      <input
-        type="text"
-        placeholder="Search operators..."
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="search-bar"
-      />
-      
-      <OperatorsComponent bannedOperators={bannedOperators}/>
-      
-      <div className="operators">
-        {filteredOperators.map(({ name, icon }) => (
-          <div
-            key={name}
-            className={`operator ${bannedOperators[side].includes(name) ? 'banned' : ''}`}
-            onClick={() => handleOperatorClick(name)}
-            style={{
-              pointerEvents: bannedOperators[side].length < 2 || bannedOperators[side].includes(name) ? 'auto' : 'none',
-              cursor: bannedOperators[side].length < 2 || bannedOperators[side].includes(name) ? 'pointer' : 'default',
-            }}
+    <main className="min-h-screen w-full bg-[#121212] text-white selection:bg-blue-500/30 overflow-x-hidden">
+      {/* background gradient */}
+      <div className="fixed inset-0 bg-gradient-to-br from-blue-900/10 via-transparent to-orange-900/10 pointer-events-none" />
+
+      {/* history sidebar */}
+      <div
+        className={`
+          fixed top-0 right-0 h-full w-64 z-40
+          bg-[#1a1a1a]/95 backdrop-blur-md border-l border-white/10
+          transform transition-transform duration-300 ease-in-out
+          ${historyOpen ? 'translate-x-0' : 'translate-x-full'}
+          overflow-y-auto p-4
+        `}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <span className="text-sm font-bold text-white">Spin History</span>
+          <button
+            onClick={() => setHistoryOpen(false)}
+            className="text-gray-400 hover:text-white transition-colors text-lg leading-none cursor-pointer"
+            aria-label="Close history"
           >
-            <img src={icon} alt={name} />
-            <div className="operator-name">{name}</div>
-          </div>
-        ))}
+            x
+          </button>
+        </div>
+        <SpinHistory history={history} onClear={() => setHistory([])} />
       </div>
-      <style jsx>{`
-        h1 {
-          padding: 10px;
-          font-size: 3rem;
-          font-weight: 700;
-          font-style: italic;
-        }
-        
-        .container {
-          background-color: #121212;
-          color: #ffffff;
-          display: flex;
-          flex-wrap: wrap;
-          flex-direction: column;
-          align-items: center;
-          margin: 0;
-          padding: 0;
-          width: 100%;
-          max-width: 100vw;
-          box-sizing: border-box;
-          justify-content: center;
-          text-align: left; 
-        }
-        .switchContainer {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 20px;
-        }  
-        
-        .left-side, .right-side {
-          flex: 1;
-          text-align: center;
-          margin: 0 10px;
-        }
-        .controls {
-          font-size: 1.15rem;
-          margin-bottom: 20px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-        }
-        .switch {
-          display: inline-block;
-          height: 34px;
-          position: relative;
-          width: 60px;
-        }
 
-        .switch input {
-          display:none;
-        }
+      {/* history toggle button -- fades out when sidebar opens */}
+      <button
+        onClick={() => setHistoryOpen(true)}
+        className={`
+          fixed top-4 right-4 z-50
+          flex items-center gap-2 px-4 py-2.5 rounded-xl
+          bg-white/10 hover:bg-white/20 border border-white/10
+          text-sm text-gray-200 hover:text-white
+          transition-all duration-300 ease-in-out cursor-pointer
+          ${historyOpen
+            ? 'opacity-0 pointer-events-none translate-x-4'
+            : 'opacity-100 translate-x-0'}
+        `}
+        aria-label="Open spin history"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        History
+        {history.length > 0 && (
+          <span className="bg-white/20 text-white text-[11px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center">
+            {history.length}
+          </span>
+        )}
+      </button>
 
-        .slider {
-          background-color: #0595fc;
-          bottom: 0;
-          cursor: pointer;
-          left: 0;
-          position: absolute;
-          right: 0;
-          top: 0;
-          transition: .4s;
-        }
+      <div className="relative mx-auto max-w-7xl px-4 py-6 flex flex-col items-center">
+        {/* header */}
+        <h1 className="mb-4 text-center leading-none">
+          <span className="block text-4xl md:text-5xl font-black italic tracking-tight text-white pr-2">
+            R6
+          </span>
+          <span className="block text-lg md:text-xl font-light tracking-[0.3em] uppercase text-gray-400 mt-0.5">
+            Roulette
+          </span>
+        </h1>
 
-        .slider:before {
-          background-color: #fff;
-          bottom: 4px;
-          content: "";
-          height: 26px;
-          left: 4px;
-          position: absolute;
-          transition: .4s;
-          width: 26px;
-        }
+        {/* controls */}
+        <ControlPanel
+          side={side}
+          onSideChange={handleSideChange}
+          count={count}
+          maxCount={maxCount}
+          onCountChange={setCount}
+          onSpin={fetchRandomOperators}
+        />
 
-        input:checked + .slider {
-          background-color: #fc8105;
-        }
+        {/* random results -- animated on each spin via spinKey */}
+        {currentRandom.operator_names.length > 0 && (
+          <div key={spinKey} className="w-full flex flex-col items-center mb-4 animate-fade-in">
+            <div className="flex flex-wrap gap-4 justify-center p-4 bg-white/5 rounded-2xl border border-white/10">
+              {currentRandom.operator_names.map((name, idx) => (
+                <div
+                  key={`${name}-${idx}`}
+                  className="animate-pop-in"
+                  style={{ animationDelay: `${idx * 100}ms` }}
+                >
+                  <OperatorCard
+                    name={name}
+                    icon={currentRandom.operator_icons[idx]}
+                    size="md"
+                    borderColor="#44db1f"
+                    isInteractive={false}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
-        input:checked + .slider:before {
-          transform: translateX(26px);
-        }
+        <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
 
-        .slider.round {
-          border-radius: 34px;
-        }
+        {/* search & banned list */}
+        <div className="w-full flex flex-col sm:flex-row items-center justify-center gap-4 mb-4">
+          <SearchBar value={search} onChange={setSearch} />
+          <BannedList
+            bannedOperators={bannedOperators[side]}
+            allOperators={allMappedOperators}
+            onUnban={handleOperatorClick}
+            onClearAll={handleClearAllBans}
+          />
+        </div>
 
-        .slider.round:before {
-          border-radius: 50%;
-        }
-        
-        .roulette-button {
-          background-color: #44db1f;
-          color: #ffffff;
-          border: none;
-          padding: 10px 20px;
-          cursor: pointer;
-          font-size: 1.2rem;
-          margin-top: 10px;
-          border-radius: 10px;
-        }
-        .random-operators {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 30px;
-          justify-content: center;
-          margin: 20px;
-        }
-        .operators {
-          display: flex;
-          flex-wrap: wrap;
-          align-items: center;
-          gap: 1vw;
-          width: 100%; 
-          max-width: 85vw;
-          justify-content: center;
-        }
-        .operator {
-          flex: 0 0 auto;
-          padding: 10px;
-          background-color: #333;
-          border-radius: 5px;
-          transition: background-color 0.3s;
-          text-align: center;
-          width: 100px;
-        }
-        .operator:hover {
-          background-color: #555;
-        }
-        .operator.banned {
-          background-color: #222;
-          outline: 2px solid #555
-        }
-        .operator.banned:hover {
-          background-color: #444;
-        }
-        .operator img {
-          width: 50px;
-          height: 50px;
-          display: block;
-          margin: 0 auto 5px;
-        }
-        .operator-name {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .search-bar {
-          margin: 20px;
-          padding: 10px;
-          width: 100%;
-          max-width: 300px;
-          border-radius: 5px;
-          border: none;
-          background-color: #333;
-          color: #ffffff;
-        }
-        .search-bar::placeholder {
-          color: #bbbbbb;
-        }
-        .random-operator {
-          transform: scale(1.2);
-          outline: 2px solid #44db1f;
-        }
-        .random-operator:hover {
-          background-color: #333;
-        }
-        .banned-info {
-          color: #111;
-          font-size: 1.2rem;
-        }
-      `}</style>
-    </div>
+        {/* operator grid */}
+        <OperatorGrid
+          operators={filteredOperators}
+          bannedOperators={bannedOperators[side]}
+          onOperatorClick={handleOperatorClick}
+          side={side}
+        />
+      </div>
+    </main>
   );
 }
