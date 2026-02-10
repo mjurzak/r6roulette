@@ -240,10 +240,10 @@ export default function Roulette() {
           onSpin={fetchRandomOperators}
         />
 
-        {/* random results -- animated on each spin via spinKey */}
-        {currentRandom.operator_names.length > 0 && (
-          <div key={spinKey} className="w-full flex flex-col items-center mb-4 animate-fade-in">
-            <div className="flex flex-wrap gap-4 justify-center p-4 bg-white/5 rounded-2xl border border-white/10">
+        {/* random results area -- always visible to prevent layout shift */}
+        <div className="w-full flex flex-col items-center mb-4">
+          {currentRandom.operator_names.length > 0 ? (
+            <div key={spinKey} className="flex flex-wrap gap-4 justify-center p-4 bg-white/5 rounded-2xl border border-white/10 animate-fade-in">
               {currentRandom.operator_names.map((name, idx) => (
                 <div
                   key={`${name}-${idx}`}
@@ -260,8 +260,14 @@ export default function Roulette() {
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="flex items-center justify-center w-full p-4 rounded-2xl border-2 border-dashed border-white/10 bg-white/[0.02]" style={{ minHeight: '10rem' }}>
+              <p className="text-gray-500 text-sm italic text-center leading-relaxed">
+                Hit <span className="text-gray-400 font-medium not-italic">SPIN</span> to randomly draw your squad
+              </p>
+            </div>
+          )}
+        </div>
 
         <div className="w-full h-px bg-gradient-to-r from-transparent via-white/10 to-transparent mb-4" />
 
