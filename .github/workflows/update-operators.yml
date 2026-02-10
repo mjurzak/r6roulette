@@ -1,0 +1,65 @@
+# scrapes the Ubisoft operator page weekly and commits updated JSON data
+name: Update Operator Data
+
+on:
+  schedule:
+    # every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+
+  # allow running manually from the Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  update-operators:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Ensure public directory exists
+        run: mkdir -p public
+
+      - name: Run operator scraper
+        working-directory: backend
+        run: python init_json.py
+
+      - name: Check for changes
+        id: changes
+        run: |
+          git diff --quiet public/attackers.json public/defenders.json 2>/dev/null || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and push updated operator data
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/attackers.json public/defenders.json
+          git commit -m "chore: update operator data from Ubisoft"
+          git push
+
+      # pushes by github-actions[bot] don't trigger other workflows,
+      # so explicitly kick off the deploy after committing new data
+      - name: Trigger deploy workflow
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'nextjs.yml',
+              ref: 'main',
+            });
