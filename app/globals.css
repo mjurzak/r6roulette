@@ -1,8 +1,8 @@
+@import url(https://db.onlinewebfonts.com/c/4d1a97eb449e4a6711e2933d11206208?family=Ubisoft+Sans+Regular);
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-@import url(https://db.onlinewebfonts.com/c/4d1a97eb449e4a6711e2933d11206208?family=Ubisoft+Sans+Regular);
 
 @font-face {
     font-family: "Ubisoft Sans Regular";
